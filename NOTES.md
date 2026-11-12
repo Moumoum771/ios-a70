@@ -1,6 +1,29 @@
-# iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
+# iOS 16 on Samsung Galaxy A70 (SM-A705, SM6150, a70q) & Redmi Note 10 Pro (sweet) - working notes
 
-## Agent handoff / active work (2026-10-15, latest)
+## Agent handoff / active work (2026-11-12, latest)
+
+### >>> UPDATE 2026-11-12: Porting from S9 (SDM845) to Galaxy A70 (SM6150) <<<
+
+**STATE & COMPLETED PORTING:**
+- Device Tree analyzed (`dtb/a70q.dtb` & `dtb/a70q.dts`): Samsung A70Q Rev0.6 (msm-id 0x163, board-id 0x22 0x0e).
+- Hardware architecture:
+  * SoC: Snapdragon 675 (SM6150), Kryo 460.
+  * CPUs: 8 cores: 6x Cortex-A55 (cores 0-5 @ 1804.8 MHz) + 2x Cortex-A76 (cores 6-7 @ 2000 MHz).
+  * Display: Samsung S6E3FC2 AMS670TA01 (6.7" Super AMOLED, 1080x2400, command mode, continuous splash at `0x9c000000`, size 15 MiB `0x00f00000`, stride 4320).
+  * RAM: 6 GiB total. Upper bank `0x100000000` with size `0xfcb00000` (~3.95 GiB) is 100% clean DRAM with NO carveout holes (every reserved-memory carveout is in the low bank < 4 GB).
+  * Watchdog: `0x17c10000` (`wdt@17c10000`).
+  * Storage: UFSHCI at `0x01d84000`.
+  * Interrupts: GICv3 at `0x17a00000` / `0x17a60000`.
+  * PMIC: PM6150 + PM6150L. Keys: Power & Vol- on PM6150 PON; Vol+ on PM6150L GPIO8 (SID 4/5).
+  * Touch: Imagis IST40xx (`touchscreen@50` on GENI I2C1 `0x884000`, IRQ GPIO 89).
+- Ported files:
+  * `tools/mkadt.py` & `a70/tools/mkadt.py`: Ported to A70 specs (SM6150, 6+2 cores, 1080x2400, 0x9c000000 FB, 0x100000000 DRAM). Verified ADT output.
+  * `a70/tools/`: `adt.py`, `mkpayload.py`, `extract-stock-dtbs.py`, `flash-twrp.sh`, `flash-userdata.sh`, `twrp-check.sh`, `sweet-log-pull.sh`, `sweet-log.py`.
+  * `a70/shim/`: `hw.h`, `fb.h`, `fb.c`, `font.h`, `console.h`, `console.c` (renamed from `con.*` to prevent Windows DOS reserved device name clashes), `plat.h`, `plat.c` (WDT 0x17c10000), `mmu.h`, `mmu.c` (15MB splash at 0x9c000000), `mdss.h`, `mdss.c`, `ufs.h`, `ufs.c`, `ramlog.h`, `ramlog.c`, `fdt.h`, `fdt.c`, `lib.c`, `shim.ld`, `start.S`, `loader.h`, `loader.c`, `screen.h`, `screen.c`, `m1.c`, `m2.c`, `m3.c`, `m4.c`.
+  * `a70/build.sh`: Packaging boot.img v0 for Samsung Galaxy A70 ABL with `a70q.dtb` appended.
+  * `a70/NOTES.md`: Full engineering notes and hardware register reference for A70.
+
+---
 
 ### >>> UPDATE 2026-10-18 (read first, then the 10-17 handoff below) <<<
 

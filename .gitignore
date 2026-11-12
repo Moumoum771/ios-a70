@@ -16,6 +16,12 @@ s9/out/
 s9/dtb/
 s9/backup/
 s9/logs/
+# Galaxy A70 port:
+a70/toolchain/
+a70/out/
+a70/dtb/
+a70/backup/
+a70/logs/
 # third-party jailbreak downloads (fetch-jailbreak.sh) and your SSH key
 s9/jailbreak/jb/
 s9/tools/frida/node_modules/

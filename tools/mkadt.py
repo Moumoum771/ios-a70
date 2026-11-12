@@ -1,43 +1,40 @@
 #!/usr/bin/env python3
 """Build the minimal Apple Device Tree that the SWEET xnu needs to boot,
-Galaxy S9 (SM-G9600, SDM845) edition of ios-sweet's tools/mkadt.py (MIT, dipa-studio).
-Every S9 address comes from its live FDT (TWRP /sys/firmware/fdt) and the shim
-milestones M1-M3; see s9port/NOTES.md.
+Samsung Galaxy A70 (SM-A705, SM6150) edition of tools/mkadt.py.
+Every A70 address comes from its DTB/DTS (a70q.dtb / a70q.dts) and hardware specs.
 
-Only what the early boot path actually reads (see NOTES.md); every MMIO
-address comes from the sweet live FDT. Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem]
+Only what the early boot path actually reads; every MMIO address comes from the A70 DTB.
+Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem] [--scale2]
 """
 import hashlib, os, struct, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adt  # noqa: E402
 
-# Kernel-managed RAM: above every Qualcomm XPU carve-out (see NOTES.md)
-# Galaxy S9: one bank 0x80000000 + 0xfe1c0000; every fixed carve-out sits below
-# 4GB, so the kernel gets the whole range from 0x100000000 (with or without
-# --highmem).
-PHYS_BASE = 0xa1800000
-MEM_SIZE = 0xdc9c0000   # 0xa1800000 -> 0x17e1c0000 span (holes excluded in pmap)
+# Kernel-managed RAM:
+# Samsung Galaxy A70 (SM-A705 / SM6150, 6GB):
+# The FDT memory node is <0x80000000 2G>, <0x1_00000000 0xfcb00000> (~3.95 GiB).
+# All fixed Qualcomm reserved-memory carve-outs are in the lower bank (< 4GB).
+# The upper bank starting at 0x100000000 is clean, contiguous DRAM without carveout holes.
+PHYS_BASE = 0x100000000
+MEM_SIZE = 0xfcb00000
 # Panic log buffer, carved from the TOP of the dram range and exposed to XNU as
 # /pram + /chosen/embedded-panic-log-size. Without it, pe_init.c's
 # check_for_panic_log() leaves gPanicBase == 0, debug_log_init() bails out twice
-# and the kernel hangs right after "kdp_core zlib memory" — reproduced on QEMU
-# and independently on ios-fajita.
+# and the kernel hangs right after "kdp_core zlib memory".
 PANIC_LOG_SIZE = 0x100000
-# --highmem (phone only): the whole upper DDR bank. The live FDT memory node is
-# <0x80000000 2G>, <0x1_00000000 0xfcc00000>; every fixed reserved-memory
-# carve-out is in the low bank and the dynamic pools are limited below 4G.
-HIGH_PHYS_BASE = 0xa1800000
-HIGH_MEM_SIZE = 0xdc9c0000
+
+HIGH_PHYS_BASE = 0x100000000
+HIGH_MEM_SIZE = 0xfcb00000
 # /arm-io children are relative to this; it must not be 0 (serial_init bails)
 SOC_BASE = 0x01000000
 
 GICD, GICD_SIZE = 0x17a00000, 0x10000
 GICR, GICR_SIZE = 0x17a60000, 0x100000
-# cont_splash_region@9d400000; M1.1 read the scanout pipe: 1440x2960, B G R A
-FB, FB_SIZE = 0x9d400000, 0x1100000
+# cont_splash_region@9c000000: 1080x2400 Super AMOLED (AMS670TA01), stride 4320, 15MB
+FB, FB_SIZE = 0x9c000000, 0x00f00000
 SWEET_ECID = 0x5357454554000001  # 'SWEET' + 1, synthetic
-FB_W, FB_H, FB_STRIDE = 1440, 2960, 1440 * 4
+FB_W, FB_H, FB_STRIDE = 1080, 2400, 1080 * 4
 # Internal UFS host (ufshc@1d84000 "ufs_mem"); QEMU virt has none
 UFS, UFS_SIZE = 0x01d84000, 0x3000
 TIMEBASE = 19200000
@@ -45,6 +42,9 @@ VTIMER_INTID = 19
 # QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 QEMU_VTIMER_INTID = 27
+
+# Canvas (pixels) and artwork subtype per display-scale.
+CANVAS = {3: (1125, 2436, 2436), 2: (828, 1792, 1792)}
 
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 
@@ -81,7 +81,7 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False):
+def build(seed=None, qemu=False, highmem=False, scale=3):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     # Carve the panic log off the top so the kernel never allocates over it.
@@ -110,9 +110,10 @@ def build(seed=None, qemu=False, highmem=False):
         ('crypto-hash-method', cstr('sha2-384')),
         # MobileGestalt's screen class: display-scale (u32, default 0) comes
         # from /chosen, the pixel size from IOMobileFramebuffer. Scale 0 makes
-        # SpringBoard's FBSDisplayMode "infxinf@0x" invalid. 1080x2400 @3x =
-        # 360x800 points (like iPhone X class devices).
-        ('display-scale', u32(3)),
+        # SpringBoard's FBSDisplayMode "infxinf@0x" invalid.
+        # A70 panel is 1080x2400. At @3x: 360x800 points (iPhone X class, 1125x2436 canvas).
+        # At @2x (--scale2): 414x896 points (iPhone XR/11 class, 828x1792 canvas).
+        ('display-scale', u32(scale)),
         # XNU derives IOPlatformUUID (gethostuuid) from these on arm; without
         # them CFPreferences cannot use kCFPreferencesCurrentHost (no ByHost
         # files), so e.g. DataMigration never records LastSystemVersion and
@@ -136,11 +137,9 @@ def build(seed=None, qemu=False, highmem=False):
         # with CSR_ALLOW_UNRESTRICTED_FS (vm_unix.c shared region checks).
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # Galaxy S9 SMP (shim M2): eight cores in physical-core order, 0-3 Cortex-A55
-    # (MIDR 0x517F803C), 4-7 Cortex-A75 (0x516F802D), one homogeneous cluster.
-    # 'qcom,kryo470' stays: KernelConfigTables.cpp matches the CPU driver on it. The kernel defaults to one
-    # and uses cpus=N to select an initial prefix (N <= 8).
-    # QEMU retains its original single-CPU tree: its MPIDRs differ from sweet.
+    # Samsung Galaxy A70 SMP (SM6150 / Kryo 460):
+    # 8 cores: 0-5 Cortex-A55 (silver, 1804.8 MHz), 6-7 Cortex-A76 (gold, 2000 MHz).
+    # 'qcom,kryo470' stays for XNU CPU driver matching.
     cpu_nodes = []
     for core in range(1 if qemu else 8):
         cpu_nodes.append(node(f'cpu{core}', [
@@ -157,7 +156,7 @@ def build(seed=None, qemu=False, highmem=False):
             ('l3-cache-id', u32(0)),     # shared L3
             ('state', cstr('running' if core == 0 else 'stopped')),
             ('timebase-frequency', u32(timebase)),
-            ('clock-frequency', u32(2803200000 if core >= 4 else 1766400000)),
+            ('clock-frequency', u32(2000000000 if core >= 6 else 1804800000)),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1866000000)),
             ('peripheral-frequency', u32(timebase)),
@@ -187,14 +186,14 @@ def build(seed=None, qemu=False, highmem=False):
         node('wdt', [ph(), ('no-pmu', u32(1))]),
         # Main display: IOMobileFramebuffer.framework counts /arm-io children
         # with this device_type and reads the canvas size from the node
-        # (the presented iPhone X size, see SweetFramebuffer.cpp);
+        # (the presented iPhone X or XR size, see SweetFramebuffer.cpp);
         # the kernel's AppleCLCD matches the compatible string.
         node('disp0', [
             ph(),
             ('device_type', cstr('display-subsystem')),
             ('compatible', cstr('sweet,display')),
-            ('canvas-width', u32(1125)),
-            ('canvas-height', u32(2436)),
+            ('canvas-width', u32(CANVAS[scale][0])),
+            ('canvas-height', u32(CANVAS[scale][1])),
         ])])
 
     fbcon = node('sweet-fbcon', [
@@ -228,6 +227,9 @@ def build(seed=None, qemu=False, highmem=False):
     ])
 
     product_props = d22ap_product()
+    if product_props and scale != 3:
+        over = {'artwork-device-subtype': u32(CANVAS[scale][2]), 'artwork-scale-factor': u32(scale)}
+        product_props = [(k, over.get(k, v)) for k, v in product_props]
     product = [node('product', [ph()] + product_props)] if product_props else []
 
     # Panic log region. /pram reg = <phys size>; it sits just above the
@@ -236,10 +238,10 @@ def build(seed=None, qemu=False, highmem=False):
 
     # Identity of the iPhone X whose userland runs here: compatible[0] is
     # hw.model/hw.target (D22AP), model is hw.machine/hw.product
-    # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching.
+    # (iPhone10,3). 'samsung,a70q' and 'qcom,sm6150' identify the board.
     return node('device-tree', [
         ph(),
-        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + cstr('xiaomi,sweet') + cstr('samsung,starqltechn') + cstr('qcom,sdm845') + cstr('AppleARM')),
+        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + cstr('xiaomi,sweet') + cstr('samsung,a70q') + cstr('qcom,sm6150') + cstr('AppleARM')),
         ('model', cstr('iPhone10,3')),
         ('target-type', cstr('D22')),
         ('target-sub-type', cstr('D22AP')),
@@ -250,7 +252,8 @@ def build(seed=None, qemu=False, highmem=False):
 
 
 if __name__ == '__main__':
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv)
+    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv,
+                 scale=2 if '--scale2' in sys.argv else 3)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:
