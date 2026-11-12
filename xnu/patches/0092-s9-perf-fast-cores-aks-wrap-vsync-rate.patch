@@ -315,12 +315,12 @@ index 8e29586..f6ac14c 100644
 + * 1.69 GHz. Stock XNU takes the lowest numbered idle CPU, so CoreAnimation's
 + * single render thread in backboardd, the UI threads and every realtime
 + * thread kept landing on slow cores while the fast ones idled. Boot-arg
-+ * sweetfast=MASK names the fast cores (default 0xf0, 0 = stock behaviour):
++ * sweetfast=MASK names the fast cores (default 0xc0, 0 = stock behaviour):
 + * realtime threads and threads at BASEPRI_DEFAULT or above take an idle fast
 + * core first and may preempt a background thread there; threads below take
 + * an idle slow core first, keeping the fast ones free.
 + */
-+static cpumap_t sweet_fast_map = 0xf0;
++static cpumap_t sweet_fast_map = 0xc0;
 +
 +static inline bool
 +sweet_wants_fast(thread_t thread)

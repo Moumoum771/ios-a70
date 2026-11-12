@@ -62,7 +62,8 @@ index 2545cf9..82b1454 100644
 +static void
 +sweet_cpu_clocks(void)
 +{
-+	uint32_t on = 1, gold_mhz = 2649;
++	uint32_t on = 0, gold_mhz = 2000;
++	/* On SM6150 (A70), keep ABL clocks by default unless sweetcpu=1 explicitly requested */
 +	PE_parse_boot_argn("sweetcpu", &on, sizeof(on));
 +	PE_parse_boot_argn("sweetcpu_mhz", &gold_mhz, sizeof(gold_mhz));
 +	if (!on) {

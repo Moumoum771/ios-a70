@@ -6,9 +6,8 @@ index 83d7db5..7b7946f 100644
  #define KEYS_OBS_PA      0x0e600000u
  #define KEYS_CNFG_PA     0x0c40a000u
  #define KEYS_PON_RT      0x0810u
--#define KEYS_GPIO_RT     0xc110u
-+/* Galaxy S9: volume-up is PM8998 GPIO6 (SID 0, peripheral 0xc5), gpio_keys in the live FDT. */
-+#define KEYS_GPIO_RT     0xc510u
+-/* Galaxy A70: volume-up is PM6150L GPIO8 (SID 4, peripheral 0xc7, PPID 0x4c7) */
++#define KEYS_GPIO_RT     0xc710u
  #define KEYS_NO_APID     0xffffu
  
  static vm_offset_t keys_core, keys_obs, keys_cnfg;
@@ -17,7 +16,7 @@ index 83d7db5..7b7946f 100644
  sweet_keys_init(void)
  {
 -	int enabled = 0;	/* Galaxy S9: PM6150/PM6150L layout is the Redmi's */
-+	int enabled = 1;	/* Galaxy S9: PON (PM8998 SID 0) + GPIO6, read-only polling */
++	int enabled = 1;	/* Galaxy A70: PM6150 PON (SID 0) + PM6150L GPIO8 (SID 4) */
  	thread_t thread;
  	if (keys_started) {
  		return;
@@ -26,17 +25,17 @@ index 83d7db5..7b7946f 100644
  	}
  	keys_pon_apid = keys_find_apid(0x008, count);
 -	keys_gpio_apid = keys_find_apid(0x4c1, count);
-+	keys_gpio_apid = keys_find_apid(0x0c5, count);
++	keys_gpio_apid = keys_find_apid(0x4c7, count);
  	uint8_t pon = 0, gpio = 0, mode = 0, en = 0, subtype = 0;
  	bool pok = keys_read(keys_pon_apid, KEYS_PON_RT, &pon);
  	bool gok = keys_read(keys_gpio_apid, KEYS_GPIO_RT, &gpio);
 -	bool mok = keys_read(keys_gpio_apid, 0xc140, &mode);
 -	bool eok = keys_read(keys_gpio_apid, 0xc146, &en);
 -	bool sok = keys_read(keys_gpio_apid, 0xc105, &subtype);
-+	bool mok = keys_read(keys_gpio_apid, 0xc540, &mode);
-+	bool eok = keys_read(keys_gpio_apid, 0xc546, &en);
-+	bool sok = keys_read(keys_gpio_apid, 0xc505, &subtype);
- 	printf("SWEET KEYS: arb=%#x apids=%u pon-apid=%u gpio4-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
++	bool mok = keys_read(keys_gpio_apid, 0xc740, &mode);
++	bool eok = keys_read(keys_gpio_apid, 0xc746, &en);
++	bool sok = keys_read(keys_gpio_apid, 0xc705, &subtype);
+ 	printf("SWEET KEYS: arb=%#x apids=%u pon-apid=%u gpio8-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
  	    keys_version, count, keys_pon_apid, keys_gpio_apid,
  	    pon, pok, gpio, gok, mode, mok, en, eok, subtype, sok);
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
@@ -48,9 +47,7 @@ index 1a117c7..2e8d000 100644
  			 * writes the read-only-late cons_ops_index and panics. */
  			sweet_console_muted = 1;
 +			/*
-+			 * Galaxy S9: the iPhone X canvas leaves borders on the larger
-+			 * panel; wipe the boot console text there once, now that the
-+			 * GUI owns the screen (this frame redraws the centre).
++			 * Galaxy A70: clear console borders if canvas is smaller than panel
 +			 */
 +			if (fOffX < 0 || fOffY < 0) {
 +				for (uint32_t y = 0; y < fHeight; y++) {

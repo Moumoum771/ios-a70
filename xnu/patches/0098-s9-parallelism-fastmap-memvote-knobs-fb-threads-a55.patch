@@ -141,7 +141,7 @@ index 361dd13..8bde7fc 100644
 -static cpumap_t sweet_fast_map = 0xf0;
 +extern cpumap_t sweet_fast_map;
 +extern int sweet_parallelism;
-+cpumap_t sweet_fast_map = 0xf0;         /* also sysctl kern.sweetfast (bsd/dev/sweet_touch.c) */
++cpumap_t sweet_fast_map = 0xc0;         /* also sysctl kern.sweetfast (A70: cores 6-7) */
 +/*
 + * sysctl kern.sweet_parallelism: libdispatch sizes dispatch_apply by the
 + * parallelism the kernel reports for the caller's QoS. CoreAnimation's CPU

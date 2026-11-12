@@ -177,9 +177,9 @@ index 3119f81..df68449 100644
 +#define S9_CTL0_FLUSH           (0x2000 + 0x018)
 +#define S9_VIG(p)               ((p) ? 0x7000 : 0x5000)
 +#define S9_FLUSH_BITS           ((1U << 17) | (1U << 1) | (1U << 0))    /* CTL, VIG1, VIG0 */
-+#define S9_SPLASH_PA            0x9d400000ULL   /* cont_splash_region, 36 MiB; TIMA follows */
-+#define S9_SPLASH_END           0x9f800000ULL
-+#define S9_FBCON_SIZE           0x1100000ULL    /* the panel buffer (mkadt.py FB_SIZE) */
++#define S9_SPLASH_PA            0x9c000000ULL   /* A70 cont_splash_region, 15 MiB */
++#define S9_SPLASH_END           0x9cf00000ULL
++#define S9_FBCON_SIZE           0x00a00000ULL    /* panel buffer 1080x2400x4 */
 +#define SSPP_SRC_SIZE           0x00
 +#define SSPP_SRC_XY             0x08
 +#define SSPP_OUT_SIZE           0x0c
@@ -587,7 +587,7 @@ index 3119f81..df68449 100644
 +AppleCLCD::zeroCopyInit(void)
 +{
 +	uint32_t half = fWidth / 2;
-+	bool ok = fPhys == S9_SPLASH_PA && fWidth == 1440 && fHeight == 2960 && (fLogicalW & 1) == 0;
++	bool ok = fPhys == S9_SPLASH_PA && fWidth == 1080 && fHeight == 2400 && (fLogicalW & 1) == 0;
 +
 +	if (ok) {
 +		fMdss = ml_io_map(S9_MDSS_PA, S9_MDSS_LEN);

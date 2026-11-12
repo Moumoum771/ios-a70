@@ -29,7 +29,7 @@ index 1981490..7182b44 100644
 +#define SP_PON_PPID             0x008u          /* SID 0, PON at 0x800 */
 +#define SP_PON_SUBTYPE          0x05u
 +#define SP_PON_SOFT_RB_SPARE    0x8fu
-+#define SP_IMEM_PA              0x146bf000u
++#define SP_IMEM_PA              0x146aa000u
 +#define SP_IMEM_RESTART_REASON  0x65cu
 +
 +static int sweet_next_boot;
@@ -182,8 +182,8 @@ index 0ab5605..64c9785 100644
 + * The controller is then set up by sweet_usb_gadget_start, high speed only
 + * (the UTMI clock feeds the absent SS PHY's pipe side, s9_dwc3_global).
 + */
-+#define S9_RSC_PA               0x179e0000u
-+#define S9_TCS_PA               0x179e0d00u
++#define S9_RSC_PA               0x18220000u
++#define S9_TCS_PA               0x18220d00u
 +#define S9_TCS_SIZE             0x3000u
 +#define S9_CMDDB_LOCATOR_PA     0x0c3f000cu
 +#define S9_DRV                  2u

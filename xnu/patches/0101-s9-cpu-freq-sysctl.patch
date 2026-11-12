@@ -67,7 +67,7 @@ index 82b1454..793196f 100644
 @@ -178,15 +217,18 @@ static void
  sweet_cpu_clocks(void)
  {
- 	uint32_t on = 1, gold_mhz = 2649;
+ 	uint32_t on = 0, gold_mhz = 2000;
 +	for (int i = 0; i < 3; i++) {
 +		sweet_osm_va[i] = (volatile uint32_t *)ml_io_map(sweet_osm_pa[i], 0x1000);
 +	}
