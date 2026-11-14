@@ -92,6 +92,7 @@ jobs:
           # keep going after errors so one run reports every compile failure
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '-s' || '-ks' }}
           NINJA_STATUS: ""
+          CFLAGS: "-Wno-unused-parameter -Wno-missing-prototypes -Wno-unused-function -Wno-sometimes-uninitialized"
         run: bash build.sh
 
       - name: Package build tree for local compiles
