@@ -69,7 +69,8 @@ jobs:
         working-directory: dxb
         env:
           # keep going after errors so one run reports every compile failure
-          MAKEFLAGS: ${{ inputs.keep_going == 'false' && '' || '-k' }}
+          MAKEFLAGS: ${{ inputs.keep_going == 'false' && '-s' || '-ks' }}
+          NINJA_STATUS: ""
         run: bash build.sh
 
       - name: Package build tree for local compiles
