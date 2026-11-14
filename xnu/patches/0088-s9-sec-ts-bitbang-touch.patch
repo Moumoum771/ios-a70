@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index e296bd2..0d522f5 100644
+index 1ff1164..aaa4f69 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -1,14 +1,20 @@
@@ -903,19 +903,18 @@ index e296bd2..0d522f5 100644
  out:
  	(void)thread_terminate(current_thread());
  	thread_block(THREAD_CONTINUE_NULL);
-@@ -697,10 +481,7 @@ out:
+@@ -697,9 +481,7 @@ out:
  void
  sweet_touch_init(void)
  {
 -	/*
--	 * Galaxy S9: off unless asked. This is the Redmi's Goodix GT9896 path and
--	 * it votes RPMh "ldoc11" to 3.2 V, a rail that means something else on SDM845.
+-	 * Galaxy A70: touch init enabled for IST40xx / Sec-TS on SM6150.
 -	 */
-+	/* Galaxy S9: off unless asked (boot-arg sweettouch=1). */
- 	int enabled = 0;
++	/* Galaxy A70: touch init enabled for IST40xx / Sec-TS on SM6150. */
+ 	int enabled = 1;
  	thread_t thread;
  	if (st.started) {
-@@ -708,7 +489,6 @@ sweet_touch_init(void)
+@@ -707,7 +489,6 @@ sweet_touch_init(void)
  	}
  	st.started = true;
  	(void)PE_parse_boot_argn("sweettouch", &enabled, sizeof(enabled));

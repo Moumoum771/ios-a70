@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index a148608..83d7db5 100644
+index a148608..cf18290 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -125,7 +125,7 @@ keys_thread(void *arg, wait_result_t result)
@@ -12,23 +12,21 @@ index a148608..83d7db5 100644
  	if (keys_started) {
  		return;
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 03defe6..570fea7 100644
+index 03defe6..f4ac062 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
-@@ -638,7 +638,11 @@ out:
+@@ -638,6 +638,9 @@ out:
  void
  sweet_touch_init(void)
  {
--	int enabled = 1;
 +	/*
 +	 * Galaxy A70: touch init enabled for IST40xx / Sec-TS on SM6150.
 +	 */
-+	int enabled = 1;
+ 	int enabled = 1;
  	thread_t thread;
  	if (st.started) {
- 		return;
 diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
-index b6c1a41..0ab5605 100644
+index b6c1a41..b1628bc 100644
 --- a/bsd/dev/sweet_usb.c
 +++ b/bsd/dev/sweet_usb.c
 @@ -76,7 +76,7 @@ usb_rd(vm_offset_t base, uint32_t off)
@@ -41,7 +39,7 @@ index b6c1a41..0ab5605 100644
  	bool clocks_on = true;
  
 diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
-index 06bb568..be6fa5a 100644
+index 06bb568..4e02c13 100644
 --- a/osfmk/arm64/arm_vm_init.c
 +++ b/osfmk/arm64/arm_vm_init.c
 @@ -2190,7 +2190,8 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
@@ -55,24 +53,18 @@ index 06bb568..be6fa5a 100644
  	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
  
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
-index 023086f..a6a3a74 100644
+index 023086f..ca46666 100644
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
-@@ -515,10 +515,11 @@ LEXT(start_first_cpu)
+@@ -515,6 +515,7 @@ LEXT(start_first_cpu)
  
  #if defined(SWEET)
  	/* Stage 0: white 64x32 band, no stack or page tables needed. */
--	MOV64	x0, (0x9c000000 + 2368 * 4320)
 +	/* Galaxy A70: splash at 0x9c000000, 1080x2400, stride 4320. */
-+	MOV64	x0, (0x9c000000 + 2368 * 4320)
+ 	MOV64	x0, (0x9c000000 + 2368 * 4320)
  	mov		w1, #-1
  	mov		x2, #32
--	mov		x4, #4320
-+	mov		x4, #4320
- Lsweet_mark_row:
- 	mov		x3, #64
- 	mov		x5, x0
-@@ -685,6 +686,10 @@ Lkernelcache_base_found:
+@@ -685,6 +686,8 @@ Lkernelcache_base_found:
  	 * create_bootstrap_mapping would replace the RAM L2 table.
  	 * SWEET uses 16K pages and all bring-up RAM is below 4GB, so the first
  	 * V=P L2 page is bootstrap_pagetables + 2*PGBYTES.
@@ -82,26 +74,17 @@ index 023086f..a6a3a74 100644
  	MOV64	x10, 0x9c000000
  	MOV64	x11, (ARM_TTE_TYPE_BLOCK | ARM_TTE_VALID | ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) | ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) | ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX)
 diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
-index 6928957..0fc4220 100644
+index 6928957..8a1a65a 100644
 --- a/osfmk/arm64/sweet_early.c
 +++ b/osfmk/arm64/sweet_early.c
-@@ -11,11 +11,16 @@
+@@ -11,6 +11,10 @@
  #include <stdint.h>
  #include <kern/misc_protos.h>
  
--static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
 +/*
 + * Galaxy A70: splash at 0x9c000000, 1080x2400, stride 4320.
 + * Fits completely in 32MB L2 block 0x9c000000-0x9e000000.
 + */
-+static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
+ static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
  #define EARLY_FB early_fb
--#define EARLY_WIDTH 1080u
--#define EARLY_HEIGHT 2400u
--#define EARLY_STRIDE (4320u / 4)
-+#define EARLY_WIDTH 1080u
-+#define EARLY_HEIGHT 2400u
-+#define EARLY_STRIDE (4320u / 4)
- #define EARLY_SCALE 2u
- #define EARLY_CELL_W (8u * EARLY_SCALE)
- #define EARLY_CELL_H (16u * EARLY_SCALE)
+ #define EARLY_WIDTH 1080u

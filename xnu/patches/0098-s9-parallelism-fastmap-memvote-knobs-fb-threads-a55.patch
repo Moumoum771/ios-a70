@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index e6efdb3..de32973 100644
+index 0eedc50..6bd6f37 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -629,6 +629,14 @@ sysctl_sweet_gesture SYSCTL_HANDLER_ARGS
@@ -18,7 +18,7 @@ index e6efdb3..de32973 100644
  sweet_touch_init(void)
  {
 diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
-index 953875c..2247eea 100644
+index 8a06aa5..48a2992 100644
 --- a/bsd/dev/sweet_usb.c
 +++ b/bsd/dev/sweet_usb.c
 @@ -36,6 +36,7 @@
@@ -90,7 +90,7 @@ index 953875c..2247eea 100644
  s9_smmu_usb(void)
  {
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 252474e..6875c7d 100644
+index c7a49e0..b74346e 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -53,6 +53,14 @@
@@ -131,14 +131,14 @@ index 252474e..6875c7d 100644
  }
  
 diff --git a/osfmk/kern/sched_prim.c b/osfmk/kern/sched_prim.c
-index 361dd13..8bde7fc 100644
+index 3fc4f03..f966e24 100644
 --- a/osfmk/kern/sched_prim.c
 +++ b/osfmk/kern/sched_prim.c
 @@ -149,7 +149,17 @@ bool sched_stats_active;
   * core first and may preempt a background thread there; threads below take
   * an idle slow core first, keeping the fast ones free.
   */
--static cpumap_t sweet_fast_map = 0xf0;
+-static cpumap_t sweet_fast_map = 0xc0;
 +extern cpumap_t sweet_fast_map;
 +extern int sweet_parallelism;
 +cpumap_t sweet_fast_map = 0xc0;         /* also sysctl kern.sweetfast (A70: cores 6-7) */

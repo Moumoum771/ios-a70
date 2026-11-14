@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 2e8d000..cf74224 100644
+index f956932..0055171 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -104,6 +104,10 @@ public:
@@ -56,7 +56,7 @@ index 2e8d000..cf74224 100644
  	fLock = IOLockAlloc();
  	fClients = OSArray::withCapacity(4);
  	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
-@@ -374,6 +407,11 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -372,6 +405,11 @@ AppleCLCD::present(const uint8_t *rec)
  		if (dx < 0 || dy < 0) {
  			dx = dy = 0;
  		}
@@ -68,7 +68,7 @@ index 2e8d000..cf74224 100644
  		/* Logical (presented) display coordinates -> panel coordinates. */
  		dx -= fOffX;
  		dy -= fOffY;
-@@ -416,6 +454,57 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -414,6 +452,57 @@ AppleCLCD::present(const uint8_t *rec)
  	}
  }
  

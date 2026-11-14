@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index af1a84f..e32b4d1 100644
+index 4ff5270..229bbfd 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -25,7 +25,8 @@
@@ -301,7 +301,7 @@ index d11fe26..6156790 100644
  }
  #endif /* SWEET */
 diff --git a/osfmk/kern/sched_prim.c b/osfmk/kern/sched_prim.c
-index 8e29586..f6ac14c 100644
+index 8e29586..09a4242 100644
 --- a/osfmk/kern/sched_prim.c
 +++ b/osfmk/kern/sched_prim.c
 @@ -137,6 +137,37 @@

@@ -1,8 +1,8 @@
 diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
-index 2545cf9..82b1454 100644
+index 2545cf9..22744ea 100644
 --- a/iokit/Kernel/arm/SweetCPU.cpp
 +++ b/iokit/Kernel/arm/SweetCPU.cpp
-@@ -121,12 +121,81 @@ SweetCPU::start(IOService *provider)
+@@ -121,12 +121,82 @@ SweetCPU::start(IOService *provider)
  	return true;
  }
  
@@ -86,7 +86,7 @@ index 2545cf9..82b1454 100644
  	IOLog("SWEET CPU: requested=%u selected=%u (limit=%u)\n",
  	    requested, topology->num_cpus, SWEET_SMP_MAX_CPUS);
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 71eba1e..af1a84f 100644
+index 19920ff..4ff5270 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -120,12 +120,23 @@ public:
@@ -204,7 +204,7 @@ index 71eba1e..af1a84f 100644
  static uint32_t
  get32(const uint8_t *p, uint32_t off)
  {
-@@ -373,6 +436,7 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -371,6 +434,7 @@ AppleCLCD::present(const uint8_t *rec)
  				for (uint32_t y = 0; y < fHeight; y++) {
  					bzero((void *)(fPixels + (uint64_t)y * fRowBytes), (size_t)fWidth * 4);
  				}
@@ -212,7 +212,7 @@ index 71eba1e..af1a84f 100644
  			}
  		}
  	}
-@@ -449,6 +513,7 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -447,6 +511,7 @@ AppleCLCD::present(const uint8_t *rec)
  			src = 0;
  		}
  		if (src != 0 && bpe == 4) {
@@ -220,7 +220,7 @@ index 71eba1e..af1a84f 100644
  			for (int32_t y = 0; y < h; y++) {
  				memcpy((void *)(fPixels + (uint64_t)(dy + y) * fRowBytes + (uint64_t)dx * 4),
  				    (const void *)(src + s->offset + (uint64_t)(sy + y) * s->bytesPerRow + (uint64_t)sx * 4),
-@@ -500,6 +565,7 @@ AppleCLCD::presentScaled(SweetSurface *s, uintptr_t src, uint32_t bpe, int32_t s
+@@ -498,6 +563,7 @@ AppleCLCD::presentScaled(SweetSurface *s, uintptr_t src, uint32_t bpe, int32_t s
  		px1 = fPanW;
  	}
  	const uintptr_t base = src + s->offset;

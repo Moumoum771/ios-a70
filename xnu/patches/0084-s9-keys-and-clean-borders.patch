@@ -1,12 +1,13 @@
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index 83d7db5..7b7946f 100644
+index cf18290..e1407a6 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -21,7 +21,8 @@ void sweet_keys_init(void);
  #define KEYS_OBS_PA      0x0e600000u
  #define KEYS_CNFG_PA     0x0c40a000u
  #define KEYS_PON_RT      0x0810u
--/* Galaxy A70: volume-up is PM6150L GPIO8 (SID 4, peripheral 0xc7, PPID 0x4c7) */
+-#define KEYS_GPIO_RT     0xc110u
++/* Galaxy A70: volume-up is PM6150L GPIO8 (SID 4, peripheral 0xc7, PPID 0x4c7) */
 +#define KEYS_GPIO_RT     0xc710u
  #define KEYS_NO_APID     0xffffu
  
@@ -15,12 +16,12 @@ index 83d7db5..7b7946f 100644
  void
  sweet_keys_init(void)
  {
--	int enabled = 0;	/* Galaxy S9: PM6150/PM6150L layout is the Redmi's */
+-	int enabled = 1;	/* Galaxy A70: PM6150 / PM6150L layout supported */
 +	int enabled = 1;	/* Galaxy A70: PM6150 PON (SID 0) + PM6150L GPIO8 (SID 4) */
  	thread_t thread;
  	if (keys_started) {
  		return;
-@@ -152,13 +153,13 @@ sweet_keys_init(void)
+@@ -152,14 +153,14 @@ sweet_keys_init(void)
  		return;
  	}
  	keys_pon_apid = keys_find_apid(0x008, count);
@@ -32,17 +33,19 @@ index 83d7db5..7b7946f 100644
 -	bool mok = keys_read(keys_gpio_apid, 0xc140, &mode);
 -	bool eok = keys_read(keys_gpio_apid, 0xc146, &en);
 -	bool sok = keys_read(keys_gpio_apid, 0xc105, &subtype);
+-	printf("SWEET KEYS: arb=%#x apids=%u pon-apid=%u gpio4-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
 +	bool mok = keys_read(keys_gpio_apid, 0xc740, &mode);
 +	bool eok = keys_read(keys_gpio_apid, 0xc746, &en);
 +	bool sok = keys_read(keys_gpio_apid, 0xc705, &subtype);
- 	printf("SWEET KEYS: arb=%#x apids=%u pon-apid=%u gpio8-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
++	printf("SWEET KEYS: arb=%#x apids=%u pon-apid=%u gpio8-apid=%u pon=%#x/%d gpio=%#x/%d mode=%#x/%d en=%#x/%d subtype=%#x/%d\n",
  	    keys_version, count, keys_pon_apid, keys_gpio_apid,
  	    pon, pok, gpio, gok, mode, mok, en, eok, subtype, sok);
+ 	/* GPIO configuration belongs to firmware. Diagnose, never repair it here. */
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 1a117c7..2e8d000 100644
+index 1a117c7..f956932 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
-@@ -326,6 +326,16 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -326,6 +326,14 @@ AppleCLCD::present(const uint8_t *rec)
  			/* Not PE_initialize_console(kPEDisableScreen): its console switch
  			 * writes the read-only-late cons_ops_index and panics. */
  			sweet_console_muted = 1;

@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 70e91ed..f12d460 100644
+index 8fecc43..5d28cf2 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -25,6 +25,8 @@
@@ -83,7 +83,7 @@ index 70e91ed..f12d460 100644
  sweet_touch_init(void)
  {
 diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
-index 64c9785..953875c 100644
+index 67c0058..8a06aa5 100644
 --- a/bsd/dev/sweet_usb.c
 +++ b/bsd/dev/sweet_usb.c
 @@ -1413,10 +1413,18 @@ ud_restart(void)
@@ -124,7 +124,7 @@ index 9969739..eb6182e 100644
  	}
  	bool external = (usb & 0x10u) != 0;
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 3119f81..df68449 100644
+index 11f173e..c291f89 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -14,8 +14,12 @@
@@ -562,7 +562,7 @@ index 3119f81..df68449 100644
  {
  	uint32_t mask = get32(rec, 0x104);
  
-@@ -617,7 +852,11 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -615,7 +850,11 @@ AppleCLCD::present(const uint8_t *rec)
  			dx = dy = 0;
  		}
  		if (fScale) {
@@ -575,7 +575,7 @@ index 3119f81..df68449 100644
  			s->release();
  			continue;
  		}
-@@ -730,6 +969,267 @@ AppleCLCD::presentScaled(SweetSurface *s, uintptr_t src, uint32_t bpe, int32_t s
+@@ -728,6 +967,267 @@ AppleCLCD::presentScaled(SweetSurface *s, uintptr_t src, uint32_t bpe, int32_t s
  	}
  }
  
@@ -843,7 +843,7 @@ index 3119f81..df68449 100644
  bool
  IOMobileFramebufferUserClient::initWithTask(task_t owningTask, void *securityID, UInt32 type)
  {
-@@ -864,17 +1364,16 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
+@@ -862,17 +1362,16 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
  	case kSweetFBRequestPowerChange:
  		if (args->scalarInputCount >= 1) {
  			bool off = args->scalarInput[0] == 0;

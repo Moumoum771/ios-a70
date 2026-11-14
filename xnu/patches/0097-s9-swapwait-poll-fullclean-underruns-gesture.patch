@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index f12d460..e6efdb3 100644
+index 5d28cf2..0eedc50 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -553,6 +553,82 @@ sysctl_sweet_swipe SYSCTL_HANDLER_ARGS
@@ -115,7 +115,7 @@ index eb6182e..20025d0 100644
  	}
  	bool external = (usb & 0x10u) != 0;
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index df68449..252474e 100644
+index c291f89..c7a49e0 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -104,6 +104,9 @@ s9_panel_autorefresh(uint32_t every_te)
@@ -125,9 +125,9 @@ index df68449..252474e 100644
 +#define S9_INTR_STATUS          0x1014          /* MDP top interrupts (sde_hw_interrupts.c) */
 +#define S9_INTR_CLEAR           0x1018
 +#define S9_INTR_INTF1_UNDERRUN  (1U << 26)      /* INTF_1 = DSI0, the panel */
- #define S9_SPLASH_PA            0x9d400000ULL   /* cont_splash_region, 36 MiB; TIMA follows */
- #define S9_SPLASH_END           0x9f800000ULL
- #define S9_FBCON_SIZE           0x1100000ULL    /* the panel buffer (mkadt.py FB_SIZE) */
+ #define S9_SPLASH_PA            0x9c000000ULL   /* A70 cont_splash_region, 15 MiB */
+ #define S9_SPLASH_END           0x9cf00000ULL
+ #define S9_FBCON_SIZE           0x00a00000ULL    /* panel buffer 1080x2400x4 */
 @@ -156,12 +159,27 @@ s9_wr(vm_offset_t a, uint32_t v)
  	*(volatile uint32_t *)a = v;
  }
@@ -191,7 +191,7 @@ index df68449..252474e 100644
  		IOLog("SWEET FB: swap %u dirty %s %d,%d %dx%d -> rows %d-%d\n", id, part ? "region" : "none",
  		    (int32_t)get32(rec, 0x250), (int32_t)get32(rec, 0x254), (int32_t)get32(rec, 0x258),
  		    (int32_t)get32(rec, 0x25c), part ? y0 : 0, part ? y1 : (int32_t)fLogicalH);
-@@ -1112,7 +1135,13 @@ AppleCLCD::flip(SweetSurface *s, uint32_t id)
+@@ -1110,7 +1133,13 @@ AppleCLCD::flip(SweetSurface *s, uint32_t id)
  	if (!fZCActive) {
  		zeroCopyStart();
  	}
@@ -206,7 +206,7 @@ index df68449..252474e 100644
  		uintptr_t k = s->kernelAddress();
  		if (k != 0) {
  			sweet_surface_clean(k + (uint64_t)y0 * s->bytesPerRow, (uint64_t)(y1 - y0) * s->bytesPerRow);
-@@ -1144,19 +1173,24 @@ AppleCLCD::flip(SweetSurface *s, uint32_t id)
+@@ -1142,19 +1171,24 @@ AppleCLCD::flip(SweetSurface *s, uint32_t id)
  }
  
  /*
@@ -238,7 +238,7 @@ index df68449..252474e 100644
  
  	clock_interval_to_deadline(50, kMillisecondScale, &deadline);
  	for (;;) {
-@@ -1170,11 +1204,15 @@ AppleCLCD::swapWait(uint32_t id, uint64_t flags)
+@@ -1168,11 +1202,15 @@ AppleCLCD::swapWait(uint32_t id, uint64_t flags)
  		ended = fEndedID;
  		presented = fPresentedID;
  		pending = fPendingFlipID;
@@ -255,7 +255,7 @@ index df68449..252474e 100644
  		if (mach_absolute_time() >= deadline) {
  			timedOut = true;
  			break;
-@@ -1184,13 +1222,33 @@ AppleCLCD::swapWait(uint32_t id, uint64_t flags)
+@@ -1182,13 +1220,33 @@ AppleCLCD::swapWait(uint32_t id, uint64_t flags)
  	absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
  	OSIncrementAtomic64((volatile SInt64 *)&sweetfb_waits);
  	OSAddAtomic64((SInt64)ns, (volatile SInt64 *)&sweetfb_wait_ns);
@@ -290,7 +290,7 @@ index df68449..252474e 100644
  	}
  }
  
-@@ -1370,7 +1428,7 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
+@@ -1368,7 +1426,7 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
  		break;
  	case kSweetFBSwapWait:
  		if (args->scalarInputCount >= 1) {

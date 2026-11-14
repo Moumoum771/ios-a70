@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 0d522f5..70e91ed 100644
+index aaa4f69..8fecc43 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -409,6 +409,8 @@ touch_sects(void)
@@ -26,7 +26,7 @@ index 0d522f5..70e91ed 100644
  	for (;;) {
  		if (!touch_level(TS_IRQ)) {
 diff --git a/osfmk/kern/sched_prim.c b/osfmk/kern/sched_prim.c
-index f6ac14c..361dd13 100644
+index 09a4242..3fc4f03 100644
 --- a/osfmk/kern/sched_prim.c
 +++ b/osfmk/kern/sched_prim.c
 @@ -166,6 +166,18 @@ sweet_pick_idle(cpumap_t idle_map, thread_t thread)

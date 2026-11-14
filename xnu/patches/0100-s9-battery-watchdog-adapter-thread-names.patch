@@ -1,5 +1,5 @@
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index 3f529e8..36bf024 100644
+index e1f505a..f9ef2e8 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -16,6 +16,7 @@
@@ -38,7 +38,7 @@ index b40eccd..d20bb80 100644
  	}
  }
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index 2363102..4e086c7 100644
+index 752f828..fcf161e 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -412,6 +412,7 @@ touch_sects(void)
@@ -94,7 +94,7 @@ index 6b926fe..328f786 100644
  	}
  }
 diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
-index 9ee059a..24c8f47 100644
+index 3fee4ab..cd7bd28 100644
 --- a/bsd/dev/sweet_usb.c
 +++ b/bsd/dev/sweet_usb.c
 @@ -1372,6 +1372,7 @@ ud_restart(void)
@@ -267,7 +267,7 @@ index 6d6fa28..8e4cebc 100644
  			fTimer->setTimeoutMS(fS9 ? S9_POLL_MS : 30000);
  		} else {
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 6635ad6..4cba4d5 100644
+index 6793c47..d19b76d 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -54,6 +54,7 @@

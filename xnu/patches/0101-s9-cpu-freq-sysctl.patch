@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
-index 82b1454..793196f 100644
+index 22744ea..2238f26 100644
 --- a/iokit/Kernel/arm/SweetCPU.cpp
 +++ b/iokit/Kernel/arm/SweetCPU.cpp
 @@ -17,6 +17,8 @@
@@ -64,10 +64,10 @@ index 82b1454..793196f 100644
  	for (int i = 0; i < SWEET_OSM_ROWS; i++) {
  		uint32_t v = osm[SWEET_OSM_FREQ(i) / 4];
  		uint32_t khz = (v >> 30) ? 19200 * (v & 0xff) : 300000;
-@@ -178,15 +217,18 @@ static void
- sweet_cpu_clocks(void)
+@@ -179,15 +218,18 @@ sweet_cpu_clocks(void)
  {
  	uint32_t on = 0, gold_mhz = 2000;
+ 	/* On SM6150 (A70), keep ABL clocks by default unless sweetcpu=1 explicitly requested */
 +	for (int i = 0; i < 3; i++) {
 +		sweet_osm_va[i] = (volatile uint32_t *)ml_io_map(sweet_osm_pa[i], 0x1000);
 +	}

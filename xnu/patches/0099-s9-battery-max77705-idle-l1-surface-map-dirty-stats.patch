@@ -11,7 +11,7 @@ index 6630131..04cc7e9 100644
  bsd/dev/munge.c 			optional config_requires_u32_munging
  bsd/dev/unix_startup.c			standard
 diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
-index 7b7946f..3f529e8 100644
+index e1407a6..e1f505a 100644
 --- a/bsd/dev/sweet_keys.c
 +++ b/bsd/dev/sweet_keys.c
 @@ -15,6 +15,7 @@
@@ -35,242 +35,8 @@ index 7b7946f..3f529e8 100644
  	for (;;) {
  		uint8_t pon = 0, gpio = 0;
  		bool pok = keys_read(keys_pon_apid, KEYS_PON_RT, &pon);
-diff --git a/bsd/dev/sweet_max77705.c b/bsd/dev/sweet_max77705.c
-new file mode 100644
-index 0000000..3d04725
---- /dev/null
-+++ b/bsd/dev/sweet_max77705.c
-@@ -0,0 +1,228 @@
-+/*
-+ * Galaxy S9: the Maxim MAX77705 (top PMIC, USB-C controller, charger and
-+ * fuel gauge in one chip) on QUP i2c@a98000, bit-banged on that bus's pins,
-+ * GPIO33 (SDA) and GPIO34 (SCL), the way i2c-gpio drives a bus: open drain
-+ * by output enable with the output latch at 0, the board's pull-ups raise a
-+ * released line. Same timing as the USB switch write proven in shim M7.11
-+ * (half period 5 us, about 100 kHz, clock stretching honoured).
-+ *
-+ * Slave addresses (drivers/mfd/max77705.c of the Samsung/LineageOS kernel):
-+ * PMIC 0x66, USB-C 0x25, charger 0x69, fuel gauge 0x36. Register reads are
-+ * SMBus style: register byte, repeated START, data; 16-bit registers come
-+ * little-endian (low byte first). Every user goes through one lock: the USB
-+ * cold start (switch write) and the battery polling.
-+ */
-+#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include <sys/param.h>
-+#include <sys/systm.h>
-+#include <sys/errno.h>
-+#include <kern/clock.h>
-+#include <kern/locks.h>
-+#include <machine/machine_routines.h>
-+
-+extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
-+
-+int sweet_max77705_write(uint8_t addr, const uint8_t *buf, unsigned n);
-+int sweet_max77705_read(uint8_t addr, uint8_t reg, uint8_t *buf, unsigned n);
-+
-+#define S9_TLMM_GPIO33_PA       0x03921000      /* north tile, 0x1000 per pin: GPIO33 SDA, GPIO34 SCL */
-+#define S9_PIN_SDA              33
-+#define S9_PIN_SCL              34
-+#define S9_GPIO_OE              (1u << 9)
-+#define S9_HALF_US              5
-+
-+static LCK_GRP_DECLARE(sweet_max77705_grp, "sweet_max77705");
-+static LCK_MTX_DECLARE(sweet_max77705_lock, &sweet_max77705_grp);
-+static vm_offset_t pm_gpio;
-+
-+static inline uint32_t
-+pm_rd(vm_offset_t a)
-+{
-+	return *(volatile uint32_t *)a;
-+}
-+
-+static inline void
-+pm_wr(vm_offset_t a, uint32_t v)
-+{
-+	*(volatile uint32_t *)a = v;
-+	__asm__ volatile ("dsb sy" ::: "memory");
-+}
-+
-+static vm_offset_t
-+pm_pin(unsigned pin)
-+{
-+	return pm_gpio + (pin - S9_PIN_SDA) * 0x1000;
-+}
-+
-+static unsigned
-+pm_level(unsigned pin)
-+{
-+	return pm_rd(pm_pin(pin) + 4) & 1;
-+}
-+
-+static void
-+pm_line(unsigned pin, bool high)
-+{
-+	pm_wr(pm_pin(pin), high ? 0 : S9_GPIO_OE);
-+	delay(S9_HALF_US);
-+}
-+
-+static bool
-+pm_scl_high(void)
-+{
-+	pm_wr(pm_pin(S9_PIN_SCL), 0);
-+	for (unsigned i = 0; !pm_level(S9_PIN_SCL); i++) {      /* clock stretching */
-+		if (i > 10000) {
-+			return false;
-+		}
-+		delay(1);
-+	}
-+	delay(S9_HALF_US);
-+	return true;
-+}
-+
-+static bool
-+pm_start(void)
-+{
-+	pm_line(S9_PIN_SDA, true);
-+	if (!pm_scl_high()) {
-+		return false;
-+	}
-+	pm_line(S9_PIN_SDA, false);
-+	pm_line(S9_PIN_SCL, false);
-+	return true;
-+}
-+
-+static void
-+pm_stop(void)
-+{
-+	pm_line(S9_PIN_SDA, false);
-+	(void)pm_scl_high();
-+	pm_line(S9_PIN_SDA, true);
-+}
-+
-+/* 0 acknowledged, EIO not, ETIMEDOUT clock stuck */
-+static int
-+pm_write_byte(uint8_t v)
-+{
-+	for (int i = 7; i >= 0; i--) {
-+		pm_line(S9_PIN_SDA, (v >> i) & 1);
-+		if (!pm_scl_high()) {
-+			return ETIMEDOUT;
-+		}
-+		pm_line(S9_PIN_SCL, false);
-+	}
-+	pm_line(S9_PIN_SDA, true);
-+	if (!pm_scl_high()) {
-+		return ETIMEDOUT;
-+	}
-+	bool nack = pm_level(S9_PIN_SDA) != 0;
-+	pm_line(S9_PIN_SCL, false);
-+	return nack ? EIO : 0;
-+}
-+
-+/* One byte, then ACK (more to come) or NACK (the last); -1 if the clock stuck. */
-+static int
-+pm_read_byte(bool ack)
-+{
-+	unsigned v = 0;
-+	pm_line(S9_PIN_SDA, true);
-+	for (int i = 0; i < 8; i++) {
-+		if (!pm_scl_high()) {
-+			return -1;
-+		}
-+		v = (v << 1) | pm_level(S9_PIN_SDA);
-+		pm_line(S9_PIN_SCL, false);
-+	}
-+	pm_line(S9_PIN_SDA, !ack);
-+	if (!pm_scl_high()) {
-+		return -1;
-+	}
-+	pm_line(S9_PIN_SCL, false);
-+	pm_line(S9_PIN_SDA, true);
-+	return (int)v;
-+}
-+
-+/* Map the two pins and make them plain GPIO inputs with the output latch at 0. Lock held. */
-+static int
-+pm_bus_ready(void)
-+{
-+	if (pm_gpio != 0) {
-+		return 0;
-+	}
-+	pm_gpio = ml_io_map(S9_TLMM_GPIO33_PA, 0x2000);
-+	if (pm_gpio == 0) {
-+		return ENOMEM;
-+	}
-+	pm_wr(pm_pin(S9_PIN_SDA) + 4, 0);
-+	pm_wr(pm_pin(S9_PIN_SCL) + 4, 0);
-+	pm_wr(pm_pin(S9_PIN_SDA), 0);   /* GPIO function, input, no pull */
-+	pm_wr(pm_pin(S9_PIN_SCL), 0);
-+	delay(20);
-+	return 0;
-+}
-+
-+int
-+sweet_max77705_write(uint8_t addr, const uint8_t *buf, unsigned n)
-+{
-+	lck_mtx_lock(&sweet_max77705_lock);
-+	int err = pm_bus_ready();
-+	if (!err) {
-+		err = ETIMEDOUT;
-+		if (pm_start()) {
-+			err = pm_write_byte((uint8_t)(addr << 1));
-+			if (err == EIO) {
-+				err = ENXIO;    /* nobody at that address */
-+			}
-+			for (unsigned i = 0; i < n && !err; i++) {
-+				err = pm_write_byte(buf[i]);
-+			}
-+		}
-+		pm_stop();
-+	}
-+	lck_mtx_unlock(&sweet_max77705_lock);
-+	return err;
-+}
-+
-+int
-+sweet_max77705_read(uint8_t addr, uint8_t reg, uint8_t *buf, unsigned n)
-+{
-+	lck_mtx_lock(&sweet_max77705_lock);
-+	int err = pm_bus_ready();
-+	if (err) {
-+		goto out;
-+	}
-+	err = ETIMEDOUT;
-+	if (!pm_start()) {
-+		goto stop;
-+	}
-+	err = pm_write_byte((uint8_t)(addr << 1));
-+	if (err == EIO) {
-+		err = ENXIO;
-+	}
-+	if (err || (err = pm_write_byte(reg))) {
-+		goto stop;
-+	}
-+	err = ETIMEDOUT;
-+	if (!pm_start()) {      /* repeated START */
-+		goto stop;
-+	}
-+	err = pm_write_byte((uint8_t)((addr << 1) | 1));
-+	if (err) {
-+		goto stop;
-+	}
-+	for (unsigned i = 0; i < n; i++) {
-+		int v = pm_read_byte(i + 1 < n);
-+		if (v < 0) {
-+			err = ETIMEDOUT;
-+			goto stop;
-+		}
-+		buf[i] = (uint8_t)v;
-+	}
-+stop:
-+	pm_stop();
-+out:
-+	lck_mtx_unlock(&sweet_max77705_lock);
-+	return err;
-+}
-+#endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
-index de32973..2363102 100644
+index 6bd6f37..752f828 100644
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
 @@ -636,6 +636,9 @@ SYSCTL_QUAD(_kern, OID_AUTO, sweetfast, CTLFLAG_RW | CTLFLAG_LOCKED, &sweet_fast
@@ -284,7 +50,7 @@ index de32973..2363102 100644
  void
  sweet_touch_init(void)
 diff --git a/bsd/dev/sweet_usb.c b/bsd/dev/sweet_usb.c
-index 2247eea..9ee059a 100644
+index 48a2992..3fee4ab 100644
 --- a/bsd/dev/sweet_usb.c
 +++ b/bsd/dev/sweet_usb.c
 @@ -139,17 +139,18 @@ usb_rd(vm_offset_t base, uint32_t off)
@@ -893,7 +659,7 @@ index 20025d0..6d6fa28 100644
  			IOLog("SWEET BATTERY: timer unavailable; static fallback\n");
  		}
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 6875c7d..6635ad6 100644
+index b74346e..6793c47 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -271,6 +271,13 @@ class AppleCLCD : public IOMobileFramebuffer {
@@ -971,7 +737,7 @@ index 6875c7d..6635ad6 100644
  	memcpy(fPending, rec, SWEET_FB_SWAP_REC_SIZE);
  	fDirty = true;
  	fEndedID = id;
-@@ -1372,7 +1420,7 @@ IOMobileFramebufferUserClient::notify(uint32_t type, const uint64_t *values, uin
+@@ -1370,7 +1418,7 @@ IOMobileFramebufferUserClient::notify(uint32_t type, const uint64_t *values, uin
  	    kIOUserNotifyOptionCanDrop);
  }
  
@@ -980,7 +746,7 @@ index 6875c7d..6635ad6 100644
  
  IOReturn
  IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMethodArguments *args,
-@@ -1458,9 +1506,9 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
+@@ -1456,9 +1504,9 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
  	if (args->structureOutputDescriptor == NULL && args->structureOutput != NULL) {
  		bzero(args->structureOutput, args->structureOutputSize);
  	}
