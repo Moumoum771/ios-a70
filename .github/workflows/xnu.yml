@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       macos_version:
-        description: macOS release whose XNU to build (13.5 = xnu-8796)
+        description: macOS release whose XNU to build (13.5 = xnu-8796, iOS 16 era)
         default: "13.5"
       kernel_config:
         description: RELEASE / DEVELOPMENT / DEBUG
@@ -36,13 +36,15 @@ env:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # Xcode 15 is compatible with the XNU 8796 IORPC definitions.
+    runs-on: macos-14
     timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Fetch and patch build script
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -58,27 +60,36 @@ jobs:
           p = Path("dxb/build.sh")
           s = p.read_text()
 
-          # Quiet the normal build output.
+          # Reduce normal build output.
           s = s.replace("VERBOSE=YES", "VERBOSE=NO")
           s = s.replace("CONCISE=0", "CONCISE=1")
 
-          # Keep the additional arm64 architecture for SWEET.
+          # Add plain arm64 to libfirehose_kernel for the SWEET kernel.
           old_arch = 'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"'
           new_arch = 'ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"'
 
           if old_arch not in s:
-              raise SystemExit("ERROR: libfirehose architecture line not found")
+              raise SystemExit("ERROR: libfirehose architecture declaration not found")
 
           s = s.replace(old_arch, new_arch, 1)
 
-          # Fix libfirehose C11 atomic header integration.
-          needle = '''        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+          # Add the C11 atomic compatibility fix inside build_libdispatch().
+          needle = """        sed -i '' 's|$(SDKROOT)/System/Library/Frameworks/Kernel.framework/PrivateHeaders|$(FAKEROOT_DIR)/System/Library/Frameworks/Kernel.framework/PrivateHeaders|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+                  """
+
+          # Use the actual source line as the insertion anchor.
+          anchor = """        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
         cd "${SRCROOT}"
-          '''
+          """
 
-          replacement = r'''        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+          if anchor not in s:
+              raise SystemExit(
+                  "ERROR: Could not find the libdispatch header configuration block"
+              )
 
-        # Make Clang's builtin headers visible despite -nostdinc.
+          replacement = """        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+
+        # Expose Clang builtin headers despite -nostdinc.
         CLANG_RESOURCE_INCLUDE="$(xcrun --sdk macosx clang -print-resource-dir)/include"
 
         if [ ! -f "${CLANG_RESOURCE_INCLUDE}/stdatomic.h" ]; then
@@ -86,51 +97,31 @@ jobs:
             exit 1
         fi
 
-        sed -i '' "s|^OTHER_CFLAGS = .*|& -isystem ${CLANG_RESOURCE_INCLUDE}|" \
-            "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+        # Verify that the target has an OTHER_CFLAGS declaration.
+        if ! grep -q '^OTHER_CFLAGS = ' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"; then
+            error "OTHER_CFLAGS declaration not found in libfirehose_kernel.xcconfig"
+            exit 1
+        fi
 
-        # firehose_buffer.c uses os_atomic macros backed by C11 atomics.
-        # Include the standard atomic declarations before os/atomic_private.h.
-        python3 - "${SRCROOT}/src/firehose/firehose_buffer.c" <<'PYATOMIC'
-          import sys
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
-          anchor = "#include <os/atomic_private.h>"
-          include = "#include <stdatomic.h>"
-
-          if include not in s:
-              if anchor not in s:
-                  raise SystemExit(
-                      "ERROR: could not locate os/atomic_private.h in firehose_buffer.c"
-                  )
-
-              s = s.replace(anchor, include + "\n" + anchor, 1)
-              p.write_text(s)
-
-          print("C11 atomic source compatibility patch applied.")
-          PYATOMIC
-
-        grep -F -- "-isystem ${CLANG_RESOURCE_INCLUDE}" \
+        # Preserve existing kernel flags and expose C11 atomics.
+        sed -i '' "s|^OTHER_CFLAGS = .*|& -isystem ${CLANG_RESOURCE_INCLUDE} -include stdatomic.h|" \\
             "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
 
         cd "${SRCROOT}"
-          '''
+          """
 
-          if needle not in s:
-              raise SystemExit(
-                  "ERROR: Could not find the expected libdispatch patch location"
-              )
+          s = s.replace(anchor, replacement, 1)
 
-          s = s.replace(needle, replacement, 1)
           p.write_text(s)
+
+          print("Build script modifications applied.")
           PY
 
-          echo "Build script patched successfully."
-
+          # Verify modifications.
           grep -n 'arm64e arm64' dxb/build.sh
+          grep -n 'CLANG_RESOURCE_INCLUDE' dxb/build.sh
+          grep -n 'include stdatomic.h' dxb/build.sh
+
           ls dxb/patches
 
       - name: Suppress compiler warnings
@@ -138,24 +129,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Do not override OTHER_CFLAGS.
-          # That would replace important target-specific flags.
+          # -quiet suppresses normal Xcode build output.
+          # Do not override OTHER_CFLAGS globally.
           sed -i '' \
-            -e 's/xcodebuild /xcodebuild -quiet GCC_WARN_INHIBIT_ALL_WARNINGS=YES /g' \
-            -e 's/VERBOSE=YES/VERBOSE=NO/g' \
-            -e 's/CONCISE=0/CONCISE=1/g' \
+            -e 's/xcodebuild /xcodebuild -quiet /g' \
             dxb/build.sh
 
           echo "Configured quiet Xcode builds."
-
           grep -n 'xcodebuild -quiet' dxb/build.sh
 
-      - name: Deps
+      - name: Dependencies and toolchain
+        shell: bash
         run: |
           set -euo pipefail
 
           brew install jq gum bash cmake ninja
 
+          # build.sh checks for xcodes even though Xcode is preinstalled.
           printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
           sudo chmod +x /usr/local/bin/xcodes
 
@@ -172,11 +162,15 @@ jobs:
           xcrun --find iig
 
           echo "=== Clang resource headers ==="
+
           RESOURCE_DIR=$(xcrun --sdk macosx clang -print-resource-dir)
+
           test -f "$RESOURCE_DIR/include/stdatomic.h"
-          echo "$RESOURCE_DIR/include/stdatomic.h"
+
+          echo "Found: $RESOURCE_DIR/include/stdatomic.h"
 
           echo "=== C11 atomic sanity test ==="
+
           cat > /tmp/atomic_test.c <<'EOF'
           #include <stdatomic.h>
 
@@ -195,7 +189,7 @@ jobs:
 
           echo "C11 atomics: OK"
 
-      - name: Build
+      - name: Build XNU
         working-directory: dxb
         env:
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '-s' || '-ks' }}
@@ -205,12 +199,15 @@ jobs:
 
       - name: Package build tree for local compiles
         if: always()
+        shell: bash
         run: |
           SDK=$(xcrun --sdk macosx --show-sdk-path)
 
           mkdir -p sdk-kernel-platform
 
-          cp -R "$SDK/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform" sdk-kernel-platform/ || true
+          cp -R \
+            "$SDK/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform" \
+            sdk-kernel-platform/ || true
 
           tar czf buildtree.tgz \
             --exclude='*.o' \
@@ -232,22 +229,30 @@ jobs:
           path: buildtree.tgz
           retention-days: 7
 
-      - name: Inspect closed KDK support libs
+      - name: Inspect closed KDK support libraries
         if: always()
+        shell: bash
         run: |
           mkdir -p out/kdk-libs
 
           for lib in /Library/Developer/KDKs/*/System/Library/KernelSupport/lib*.a; do
             b=$(basename "$lib" .a)
-            ar t "$lib" > "out/kdk-libs/$b.members.txt" 2>&1 || true
-            nm -m "$lib" > "out/kdk-libs/$b.nm.txt" 2>&1 || true
-            lipo -info "$lib" >> out/kdk-libs/arch.txt 2>&1 || true
+
+            ar t "$lib" \
+              > "out/kdk-libs/$b.members.txt" 2>&1 || true
+
+            nm -m "$lib" \
+              > "out/kdk-libs/$b.nm.txt" 2>&1 || true
+
+            lipo -info "$lib" \
+              >> out/kdk-libs/arch.txt 2>&1 || true
           done
 
           ls -la out/kdk-libs
 
-      - name: Collect
+      - name: Collect kernel
         if: always()
+        shell: bash
         run: |
           mkdir -p out
 
