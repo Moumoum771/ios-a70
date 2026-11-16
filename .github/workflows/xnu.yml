@@ -36,12 +36,15 @@ env:
 
 jobs:
   build:
-    # Xcode 15 is compatible with the XNU 8796 IORPC definitions.
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # Fetch and patch darwin-xnu-build
+      # ---------------------------------------------------------
 
       - name: Fetch and patch build script
         shell: bash
@@ -64,65 +67,80 @@ jobs:
           s = s.replace("VERBOSE=YES", "VERBOSE=NO")
           s = s.replace("CONCISE=0", "CONCISE=1")
 
-          # Add plain arm64 to libfirehose_kernel for the SWEET kernel.
+          # Add plain arm64 to libfirehose_kernel for SWEET.
           old_arch = 'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"'
           new_arch = 'ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"'
 
           if old_arch not in s:
-              raise SystemExit("ERROR: libfirehose architecture declaration not found")
+              raise SystemExit(
+                  "ERROR: libfirehose architecture declaration not found"
+              )
 
           s = s.replace(old_arch, new_arch, 1)
 
-          # Add the C11 atomic compatibility fix inside build_libdispatch().
-          needle = """        sed -i '' 's|$(SDKROOT)/System/Library/Frameworks/Kernel.framework/PrivateHeaders|$(FAKEROOT_DIR)/System/Library/Frameworks/Kernel.framework/PrivateHeaders|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
-                  """
+          # Locate the existing fakeroot include-path configuration.
+          lines = s.splitlines(keepends=True)
 
-          # Use the actual source line as the insertion anchor.
-          anchor = """        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
-        cd "${SRCROOT}"
-          """
+          anchor = (
+              's|$(SDKROOT)/usr/local/include|'
+              '$(FAKEROOT_DIR)/usr/local/include|g'
+          )
 
-          if anchor not in s:
+          matches = [
+              i for i, line in enumerate(lines)
+              if anchor in line
+              and "libfirehose_kernel.xcconfig" in line
+          ]
+
+          if len(matches) != 1:
               raise SystemExit(
-                  "ERROR: Could not find the libdispatch header configuration block"
+                  "ERROR: Expected exactly one libfirehose include-path "
+                  f"command, found {len(matches)}"
               )
 
-          replacement = """        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+          index = matches[0]
+          original = lines[index]
 
-        # Expose Clang builtin headers despite -nostdinc.
-        CLANG_RESOURCE_INCLUDE="$(xcrun --sdk macosx clang -print-resource-dir)/include"
+          indent = original[:len(original) - len(original.lstrip())]
 
-        if [ ! -f "${CLANG_RESOURCE_INCLUDE}/stdatomic.h" ]; then
-            error "Clang stdatomic.h not found"
-            exit 1
-        fi
+          # Add C11 atomic support to libfirehose_kernel.
+          # This runs when build.sh configures the libfirehose target.
+          injected = [
+              indent + "\n",
+              indent + "# C11 atomic compatibility for modern Clang.\n",
+              indent + 'CLANG_RESOURCE_INCLUDE="$(xcrun --sdk macosx clang -print-resource-dir)/include"\n',
+              indent + 'ATOMIC_XCCONFIG="${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"\n',
+              indent + 'if [ ! -f "${CLANG_RESOURCE_INCLUDE}/stdatomic.h" ]; then\n',
+              indent + '    echo "ERROR: Clang stdatomic.h not found" >&2\n',
+              indent + '    exit 1\n',
+              indent + "fi\n",
+              indent + 'if grep -q "^OTHER_CFLAGS = " "${ATOMIC_XCCONFIG}"; then\n',
+              indent + '    sed -i \'\' "s|^OTHER_CFLAGS = .*|& -isystem ${CLANG_RESOURCE_INCLUDE} -include stdatomic.h|" "${ATOMIC_XCCONFIG}"\n',
+              indent + "else\n",
+              indent + '    printf \'\\nOTHER_CFLAGS = -isystem %s -include stdatomic.h\\n\' "${CLANG_RESOURCE_INCLUDE}" >> "${ATOMIC_XCCONFIG}"\n',
+              indent + "fi\n",
+              indent + 'echo "Configured C11 atomics: ${CLANG_RESOURCE_INCLUDE}"\n',
+          ]
 
-        # Verify that the target has an OTHER_CFLAGS declaration.
-        if ! grep -q '^OTHER_CFLAGS = ' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"; then
-            error "OTHER_CFLAGS declaration not found in libfirehose_kernel.xcconfig"
-            exit 1
-        fi
+          lines[index + 1:index + 1] = injected
 
-        # Preserve existing kernel flags and expose C11 atomics.
-        sed -i '' "s|^OTHER_CFLAGS = .*|& -isystem ${CLANG_RESOURCE_INCLUDE} -include stdatomic.h|" \\
-            "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+          p.write_text("".join(lines))
 
-        cd "${SRCROOT}"
-          """
-
-          s = s.replace(anchor, replacement, 1)
-
-          p.write_text(s)
-
-          print("Build script modifications applied.")
+          print("Build script modifications applied successfully.")
           PY
 
-          # Verify modifications.
+          echo "=== Architecture modification ==="
           grep -n 'arm64e arm64' dxb/build.sh
-          grep -n 'CLANG_RESOURCE_INCLUDE' dxb/build.sh
-          grep -n 'include stdatomic.h' dxb/build.sh
 
+          echo "=== Atomic compatibility modification ==="
+          grep -n 'CLANG_RESOURCE_INCLUDE' dxb/build.sh
+
+          echo "=== Available patches ==="
           ls dxb/patches
+
+      # ---------------------------------------------------------
+      # Quiet compiler output
+      # ---------------------------------------------------------
 
       - name: Suppress compiler warnings
         shell: bash
@@ -130,13 +148,20 @@ jobs:
           set -euo pipefail
 
           # -quiet suppresses normal Xcode build output.
-          # Do not override OTHER_CFLAGS globally.
+          # Preserve target-specific compiler flags.
           sed -i '' \
-            -e 's/xcodebuild /xcodebuild -quiet /g' \
+            -e 's/xcodebuild /xcodebuild -quiet GCC_WARN_INHIBIT_ALL_WARNINGS=YES /g' \
+            -e 's/VERBOSE=YES/VERBOSE=NO/g' \
+            -e 's/CONCISE=0/CONCISE=1/g' \
             dxb/build.sh
 
           echo "Configured quiet Xcode builds."
+
           grep -n 'xcodebuild -quiet' dxb/build.sh
+
+      # ---------------------------------------------------------
+      # Dependencies and Xcode
+      # ---------------------------------------------------------
 
       - name: Dependencies and toolchain
         shell: bash
@@ -161,6 +186,7 @@ jobs:
           xcodebuild -version
           xcrun --find iig
 
+          # Verify Clang atomic headers.
           echo "=== Clang resource headers ==="
 
           RESOURCE_DIR=$(xcrun --sdk macosx clang -print-resource-dir)
@@ -169,6 +195,7 @@ jobs:
 
           echo "Found: $RESOURCE_DIR/include/stdatomic.h"
 
+          # Verify C11 atomic declarations work with -nostdinc.
           echo "=== C11 atomic sanity test ==="
 
           cat > /tmp/atomic_test.c <<'EOF'
@@ -189,6 +216,10 @@ jobs:
 
           echo "C11 atomics: OK"
 
+      # ---------------------------------------------------------
+      # Build XNU
+      # ---------------------------------------------------------
+
       - name: Build XNU
         working-directory: dxb
         env:
@@ -196,6 +227,10 @@ jobs:
           NINJA_STATUS: ""
         run: |
           bash build.sh
+
+      # ---------------------------------------------------------
+      # Package build tree for local compilation
+      # ---------------------------------------------------------
 
       - name: Package build tree for local compiles
         if: always()
@@ -220,7 +255,7 @@ jobs:
             -C dxb build/xnu.obj fakeroot/usr/local/include xnu \
             -C .. sdk-kernel-platform
 
-          ls -la buildtree.tgz
+          ls -lh buildtree.tgz
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -229,14 +264,26 @@ jobs:
           path: buildtree.tgz
           retention-days: 7
 
+      # ---------------------------------------------------------
+      # Inspect closed KDK support libraries
+      # ---------------------------------------------------------
+
       - name: Inspect closed KDK support libraries
         if: always()
         shell: bash
         run: |
           mkdir -p out/kdk-libs
 
+          FOUND=0
+
           for lib in /Library/Developer/KDKs/*/System/Library/KernelSupport/lib*.a; do
+            [ -f "$lib" ] || continue
+
+            FOUND=1
+
             b=$(basename "$lib" .a)
+
+            echo "Inspecting $lib"
 
             ar t "$lib" \
               > "out/kdk-libs/$b.members.txt" 2>&1 || true
@@ -248,7 +295,15 @@ jobs:
               >> out/kdk-libs/arch.txt 2>&1 || true
           done
 
+          if [ "$FOUND" -eq 0 ]; then
+            echo "No installed KDK support libraries found."
+          fi
+
           ls -la out/kdk-libs
+
+      # ---------------------------------------------------------
+      # Collect kernel artifacts
+      # ---------------------------------------------------------
 
       - name: Collect kernel
         if: always()
@@ -258,7 +313,8 @@ jobs:
 
           cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
 
-          ls -la out
+          echo "=== Collected kernel files ==="
+          ls -lah out
 
           (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
 
