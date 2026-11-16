@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       macos_version:
-        description: macOS release whose xnu to build (13.5 = xnu-8796, iOS 16 era)
+        description: macOS release whose XNU to build (13.5 = xnu-8796)
         default: "13.5"
       kernel_config:
         description: RELEASE / DEVELOPMENT / DEBUG
@@ -42,8 +42,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch build script
+      - name: Fetch and patch build script
         run: |
+          set -euo pipefail
+
           git init -q dxb
           git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
           git -C dxb checkout -q FETCH_HEAD
@@ -56,17 +58,79 @@ jobs:
           p = Path("dxb/build.sh")
           s = p.read_text()
 
+          # Quiet the normal build output.
           s = s.replace("VERBOSE=YES", "VERBOSE=NO")
           s = s.replace("CONCISE=0", "CONCISE=1")
 
+          # Keep the additional arm64 architecture for SWEET.
+          old_arch = 'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"'
+          new_arch = 'ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"'
+
+          if old_arch not in s:
+              raise SystemExit("ERROR: libfirehose architecture line not found")
+
+          s = s.replace(old_arch, new_arch, 1)
+
+          # Fix libfirehose C11 atomic header integration.
+          needle = '''        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+        cd "${SRCROOT}"
+          '''
+
+          replacement = r'''        sed -i '' 's|$(SDKROOT)/usr/local/include|$(FAKEROOT_DIR)/usr/local/include|g' "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+
+        # Make Clang's builtin headers visible despite -nostdinc.
+        CLANG_RESOURCE_INCLUDE="$(xcrun --sdk macosx clang -print-resource-dir)/include"
+
+        if [ ! -f "${CLANG_RESOURCE_INCLUDE}/stdatomic.h" ]; then
+            error "Clang stdatomic.h not found"
+            exit 1
+        fi
+
+        sed -i '' "s|^OTHER_CFLAGS = .*|& -isystem ${CLANG_RESOURCE_INCLUDE}|" \
+            "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+
+        # firehose_buffer.c uses os_atomic macros backed by C11 atomics.
+        # Include the standard atomic declarations before os/atomic_private.h.
+        python3 - "${SRCROOT}/src/firehose/firehose_buffer.c" <<'PYATOMIC'
+          import sys
+          from pathlib import Path
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          anchor = "#include <os/atomic_private.h>"
+          include = "#include <stdatomic.h>"
+
+          if include not in s:
+              if anchor not in s:
+                  raise SystemExit(
+                      "ERROR: could not locate os/atomic_private.h in firehose_buffer.c"
+                  )
+
+              s = s.replace(anchor, include + "\n" + anchor, 1)
+              p.write_text(s)
+
+          print("C11 atomic source compatibility patch applied.")
+          PYATOMIC
+
+        grep -F -- "-isystem ${CLANG_RESOURCE_INCLUDE}" \
+            "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"
+
+        cd "${SRCROOT}"
+          '''
+
+          if needle not in s:
+              raise SystemExit(
+                  "ERROR: Could not find the expected libdispatch patch location"
+              )
+
+          s = s.replace(needle, replacement, 1)
           p.write_text(s)
           PY
 
-          # libfirehose_kernel is built arm64e-only;
-          # the SWEET kernel is plain arm64.
-          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
+          echo "Build script patched successfully."
 
-          grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
+          grep -n 'arm64e arm64' dxb/build.sh
           ls dxb/patches
 
       - name: Suppress compiler warnings
@@ -74,22 +138,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # -quiet hides normal xcodebuild output.
-          # -w suppresses ALL Clang warnings.
-          # Compiler errors remain visible.
+          # Do not override OTHER_CFLAGS.
+          # That would replace important target-specific flags.
           sed -i '' \
-            -e 's/xcodebuild /xcodebuild -quiet OTHER_CFLAGS=-w OTHER_CPLUSPLUSFLAGS=-w /g' \
+            -e 's/xcodebuild /xcodebuild -quiet GCC_WARN_INHIBIT_ALL_WARNINGS=YES /g' \
             -e 's/VERBOSE=YES/VERBOSE=NO/g' \
             -e 's/CONCISE=0/CONCISE=1/g' \
             dxb/build.sh
 
-          echo "Configured xcodebuild warning suppression."
+          echo "Configured quiet Xcode builds."
 
-          # Verify the modifications.
           grep -n 'xcodebuild -quiet' dxb/build.sh
 
       - name: Deps
         run: |
+          set -euo pipefail
+
           brew install jq gum bash cmake ninja
 
           printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
@@ -107,10 +171,33 @@ jobs:
           xcodebuild -version
           xcrun --find iig
 
+          echo "=== Clang resource headers ==="
+          RESOURCE_DIR=$(xcrun --sdk macosx clang -print-resource-dir)
+          test -f "$RESOURCE_DIR/include/stdatomic.h"
+          echo "$RESOURCE_DIR/include/stdatomic.h"
+
+          echo "=== C11 atomic sanity test ==="
+          cat > /tmp/atomic_test.c <<'EOF'
+          #include <stdatomic.h>
+
+          atomic_int value;
+
+          void test(void) {
+              atomic_store_explicit(&value, 1, memory_order_relaxed);
+          }
+          EOF
+
+          xcrun clang \
+            -std=gnu11 \
+            -nostdinc \
+            -isystem "$RESOURCE_DIR/include" \
+            -fsyntax-only /tmp/atomic_test.c
+
+          echo "C11 atomics: OK"
+
       - name: Build
         working-directory: dxb
         env:
-          # Continue after errors to collect all compilation failures.
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '-s' || '-ks' }}
           NINJA_STATUS: ""
         run: |
